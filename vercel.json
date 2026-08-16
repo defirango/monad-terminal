@@ -1,0 +1,10 @@
+{
+    "functions": {
+          "api/chain.js": { "maxDuration": 15 },
+          "api/stables.js": { "maxDuration": 10 },
+          "api/jobs.js": { "maxDuration": 10 },
+          "api/mips.js": { "maxDuration": 10 },
+          "api/events.js": { "maxDuration": 10 },
+          "api/alpha.js": { "maxDuration": 5 }
+    }
+}
