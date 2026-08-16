@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monad Terminal — live ecosystem dashboard</title>
+<meta name="description" content="Live dashboard for the Monad ecosystem: TVL, protocols, stablecoins, jobs, governance and events, refreshed on every load." />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: #0a0e14;
+  color: #c9d1d9;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+:root {
+  --bg: #0a0e14;
+  --panel: #0f141b;
+  --panel-2: #151b23;
+  --border: #1f2733;
+  --border-2: #2a3441;
+  --text: #c9d1d9;
+  --text-dim: #7a8494;
+  --text-mid: #9ba5b4;
+  --accent: #7ee787;
+  --accent-2: #58a6ff;
+  --amber: #ffb454;
+  --red: #ff6b6b;
+}
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.container { max-width: 1300px; margin: 0 auto; padding: 20px; }
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; margin-bottom: 14px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; gap: 16px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.brand .name { font-size: 15px; color: var(--text); }
+.brand .sub { font-size: 11px; color: var(--text-dim); }
+.top-actions { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-dim); }
+.pill {
+  padding: 6px 12px; border: 1px solid var(--border-2); border-radius: 4px;
+  font-size: 11px; color: var(--text-mid); background: var(--panel-2);
+  cursor: pointer; font-family: inherit;
+}
+.pill:hover { border-color: var(--accent-2); color: var(--accent-2); }
+.section {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 18px; margin-bottom: 14px;
+}
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--accent);
+  text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center;
+  justify-content: space-between;
+}
+.section-title .note { color: var(--text-dim); font-weight: 400; text-transform: none; letter-spacing: normal; font-size: 10px; }
+.metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.metric-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; }
+.metric-box .lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.metric-box .val { font-size: 18px; font-weight: 700; color: var(--text); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.metric-box .chg { font-size: 11px; margin-top: 2px; font-weight: 600; }
+.delta-up { color: var(--accent); }
+.delta-down { color: var(--red); }
+.chart-container { position: relative; height: 200px; background: var(--panel-2); border-radius: 6px; padding: 12px; margin-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 8px 10px; color: var(--text-dim); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border-2); }
+td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: rgba(88, 166, 255, 0.04); }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+td.name { font-weight: 500; color: var(--text); }
+.cat-badge { font-size: 10px; color: var(--text-dim); }
+.job-card, .list-card {
+  padding: 12px; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.job-card .title { font-weight: 600; color: var(--text); font-size: 13px; }
+.job-card .meta { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.fresh { display: inline-block; padding: 1px 6px; background: var(--accent); color: var(--bg); border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
+.hot { display: inline-block; padding: 1px 6px; background: var(--amber); color: var(--bg); border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 6px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.empty, .loading-text { color: var(--text-dim); font-style: italic; padding: 16px; text-align: center; font-size: 12px; }
+.err { color: var(--red); font-size: 11px; padding: 8px 0; }
+.alpha-item { padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; }
+.alpha-item .head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+.alpha-item .author { color: var(--accent-2); font-weight: 600; }
+.alpha-item .when { color: var(--text-dim); }
+.alpha-item .text { color: var(--text); font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
+.alpha-item .views { color: var(--text-dim); font-size: 10px; }
+footer { text-align: center; color: var(--text-dim); font-size: 10px; padding: 20px 0; }
+@media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="dot"></div>
+      <div>
+        <div class="name">MONAD TERMINAL</div>
+        <div class="sub" id="date-line">live ecosystem dashboard</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="refresh-note">loading live data…</span>
+      <button class="pill" id="refresh-btn">↻ refresh</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">◉ Chain Pulse <span class="note">api.llama.fi · live</span></div>
+    <div class="metric-row" id="chain-metrics">
+      <div class="loading-text">loading…</div>
+    </div>
+    <div class="chart-container"><canvas id="tvl-chart"></canvas></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <div class="section-title">◉ Protocols <span class="note">by Monad TVL</span></div>
+      <div id="protocols-table"><div class="loading-text">loading…</div></div>
+    </div>
+    <div class="section">
+      <div class="section-title">◉ Stablecoins <span class="note">on Monad</span></div>
+      <div id="stables-table"><div class="loading-text">loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <div class="section-title">◇ Jobs <span class="note">eco-jobs.monad.xyz</span></div>
+      <div id="jobs-list"><div class="loading-text">loading…</div></div>
+    </div>
+    <div class="section">
+      <div class="section-title">◇ Governance <span class="note">MIPs · forum.monad.xyz</span></div>
+      <div id="mips-list"><div class="loading-text">loading…</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <div class="section-title">◇ Events <span class="note">monad.xyz/events</span></div>
+      <div id="events-list"><div class="loading-text">loading…</div></div>
+    </div>
+    <div class="section">
+      <div class="section-title">◇ Alpha <span class="note" id="alpha-note">@monad + @keoneHD</span></div>
+      <div id="alpha-list"><div class="loading-text">loading…</div></div>
+    </div>
+  </div>
+
+  <footer>
+    Data: <a href="https://defillama.com" target="_blank">DefiLlama</a> ·
+    <a href="https://www.coingecko.com" target="_blank">CoinGecko</a> ·
+    <a href="https://eco-jobs.monad.xyz" target="_blank">Monad Job Board</a> ·
+    <a href="https://forum.monad.xyz" target="_blank">Monad Research Forum</a> ·
+    <a href="https://www.monad.xyz/events" target="_blank">Monad Events</a>
+    — refreshed live on every page load
+  </footer>
+
+</div>
+
+<script>
+function fmtMoney(n) {
+  if (n == null || isNaN(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  n = Math.abs(n);
+  if (n >= 1e9) return sign + '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return sign + '$' + (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return sign + '$' + (n/1e3).toFixed(1) + 'K';
+  return sign + '$' + n.toFixed(2);
+}
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return String(n);
+}
+function fmtPct(n) {
+  if (n == null || isNaN(n)) return '<span style="color:var(--text-dim)">—</span>';
+  const cls = n > 0 ? 'delta-up' : (n < 0 ? 'delta-down' : '');
+  const sign = n > 0 ? '+' : '';
+  const val = Math.abs(n) >= 1000 ? (n/1000).toFixed(1) + 'K%' : n.toFixed(2) + '%';
+  return '<span class="' + cls + '">' + sign + val + '</span>';
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function getJson(url) {
+  try {
+    const r = await fetch(url);
+    return await r.json();
+  } catch (e) {
+    return { error: String(e) };
+  }
+}
+
+let tvlChart = null;
+function drawTvlChart(history) {
+  const el = document.getElementById('tvl-chart');
+  if (!el || !window.Chart || !history || !history.length) return;
+  if (tvlChart) tvlChart.destroy();
+  tvlChart = new Chart(el.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: history.map((_, i) => i),
+      datasets: [{
+        data: history.map(v => v/1e6), borderColor: '#7ee787', borderWidth: 1.5,
+        pointRadius: 0, tension: 0.3, fill: true, backgroundColor: '#7ee78720',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '$' + c.parsed.y.toFixed(1) + 'M' } } },
+      scales: {
+        x: { display: false },
+        y: { grid: { color: '#1f2733' }, ticks: { color: '#7a8494', callback: v => '$' + v + 'M' } }
+      }
+    }
+  });
+}
+
+async function loadChain() {
+  const d = await getJson('/api/chain');
+  const box = document.getElementById('chain-metrics');
+  if (d.error && !d.chain) { box.innerHTML = '<div class="err">chain data unavailable — ' + esc(d.error) + '</div>'; return; }
+  const c = d.chain || {};
+  box.innerHTML = `
+    <div class="metric-box"><div class="lbl">TVL</div><div class="val">${fmtMoney(c.tvl)}</div><div class="chg">${fmtPct(c.tvlChange24h)} 24h</div></div>
+    <div class="metric-box"><div class="lbl">DEX Vol 7d</div><div class="val">${fmtMoney(c.dexVol7d)}</div><div class="chg">${fmtPct(c.dexVol7dChange)} WoW</div></div>
+    <div class="metric-box"><div class="lbl">Perps Vol 7d</div><div class="val">${fmtMoney(c.perpsVol7d)}</div><div class="chg">${fmtPct(c.perpsVol7dChange)} WoW</div></div>
+    <div class="metric-box"><div class="lbl">Chain Fees 24h</div><div class="val">${fmtMoney(c.chainFees24h)}</div></div>
+    <div class="metric-box"><div class="lbl">MON Price</div><div class="val">$${c.monPrice != null ? c.monPrice.toFixed(4) : '—'}</div><div class="chg" style="color:var(--text-dim)">${fmtMoney(c.monMcap)} mcap</div></div>
+    <div class="metric-box"><div class="lbl">MON FDV</div><div class="val">${fmtMoney(c.monFDV)}</div></div>
+  `;
+  drawTvlChart(d.tvlHistory);
+
+  const protoBox = document.getElementById('protocols-table');
+  const protocols = d.protocols || [];
+  if (!protocols.length) {
+    protoBox.innerHTML = '<div class="empty">protocol data unavailable</div>';
+  } else {
+    protoBox.innerHTML = `
+      <table>
+        <thead><tr><th>Protocol</th><th>Category</th><th class="num">TVL</th><th class="num">1d</th><th class="num">7d</th><th class="num">30d</th></tr></thead>
+        <tbody>
+          ${protocols.map(p => `
+            <tr>
+              <td class="name">${esc(p.name)}</td>
+              <td class="cat-badge">${esc(p.category)}</td>
+              <td class="num">${fmtMoney(p.tvl)}</td>
+              <td class="num">${fmtPct(p.d1)}</td>
+              <td class="num">${fmtPct(p.d7)}</td>
+              <td class="num">${fmtPct(p.d30)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+  return d;
+}
+
+async function loadStables() {
+  const d = await getJson('/api/stables');
+  const box = document.getElementById('stables-table');
+  const stables = d.stables || [];
+  if (!stables.length) { box.innerHTML = '<div class="empty">stablecoin data unavailable</div>'; return; }
+  box.innerHTML = `
+    <table>
+      <thead><tr><th>Name</th><th class="num">Mcap</th><th class="num">1d</th><th class="num">7d</th><th class="num">30d</th></tr></thead>
+      <tbody>
+        ${stables.slice(0, 14).map(s => `
+          <tr>
+            <td class="name">${esc(s.name)} <span style="color:var(--text-dim); font-weight:400;">· ${esc(s.ticker)}</span></td>
+            <td class="num">${fmtMoney(s.mcap)}</td>
+            <td class="num">${fmtPct(s.d1)}</td>
+            <td class="num">${fmtPct(s.d7)}</td>
+            <td class="num">${fmtPct(s.d30)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadJobs() {
+  const d = await getJson('/api/jobs');
+  const box = document.getElementById('jobs-list');
+  const jobs = d.jobs || [];
+  if (!jobs.length) { box.innerHTML = '<div class="empty">no matching roles right now</div>'; return; }
+  box.innerHTML = jobs.map(j => `
+    <div class="job-card">
+      <div>
+        <div class="title">${esc(j.title)}${j.posted != null && j.posted <= 3 ? '<span class="fresh">fresh</span>' : ''}</div>
+        <div class="meta">${esc(j.company)} · ${esc(j.location)} · posted ${j.posted != null ? j.posted + 'd ago' : '—'}</div>
+      </div>
+      <a href="${esc(j.url)}" target="_blank" class="pill">apply →</a>
+    </div>
+  `).join('');
+}
+
+async function loadMips() {
+  const d = await getJson('/api/mips');
+  const box = document.getElementById('mips-list');
+  const mips = d.mips || [];
+  if (!mips.length) { box.innerHTML = '<div class="empty">forum data unavailable</div>'; return; }
+  box.innerHTML = mips.map(m => `
+    <div class="list-card">
+      <div>
+        <div class="title">${esc(m.id)} · ${esc(m.name)}</div>
+        <div class="meta">${m.replies} replies · ${esc(m.lastActivity)}</div>
+      </div>
+      <a href="${esc(m.url)}" target="_blank" class="pill">forum →</a>
+    </div>
+  `).join('');
+}
+
+async function loadEvents() {
+  const d = await getJson('/api/events');
+  const box = document.getElementById('events-list');
+  const events = d.events || [];
+  if (!events.length) { box.innerHTML = '<div class="empty">no upcoming events listed</div>'; return; }
+  box.innerHTML = events.map(e => `
+    <div class="list-card">
+      <div>
+        <div class="title">${esc(e.name)}</div>
+        <div class="meta">${esc(e.date)} · ${esc(e.location)}</div>
+      </div>
+      <a href="${esc(e.url)}" target="_blank" class="pill">RSVP →</a>
+    </div>
+  `).join('');
+}
+
+async function loadAlpha() {
+  const d = await getJson('/api/alpha');
+  const box = document.getElementById('alpha-list');
+  const alpha = d.alpha || [];
+  const note = document.getElementById('alpha-note');
+  if (d.syncedAt) {
+    const days = Math.round((Date.now() - new Date(d.syncedAt).getTime()) / 86400000);
+    note.textContent = '@monad + @keoneHD · synced ' + (days <= 0 ? 'today' : days + 'd ago') + ' (not live — X has no public API)';
+  }
+  if (!alpha.length) { box.innerHTML = '<div class="empty">no threads synced</div>'; return; }
+  box.innerHTML = alpha.map(a => `
+    <div class="alpha-item">
+      <div class="head">
+        <span class="author">${esc(a.author)}</span>
+        <span class="when">${esc(a.when)}</span>
+        ${a.hot ? '<span class="hot">🔥 HOT</span>' : ''}
+      </div>
+      <div class="text">${esc(a.text)}</div>
+      <div class="views">${esc(a.views)} views · <a href="${esc(a.url)}" target="_blank">open →</a></div>
+    </div>
+  `).join('');
+}
+
+async function loadAll() {
+  document.getElementById('refresh-note').textContent = 'fetching live data…';
+  const results = await Promise.allSettled([loadChain(), loadStables(), loadJobs(), loadMips(), loadEvents(), loadAlpha()]);
+  document.getElementById('refresh-note').textContent = 'last refreshed ' + new Date().toLocaleTimeString();
+  document.getElementById('date-line').textContent = 'live ecosystem dashboard · ' + new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+document.getElementById('refresh-btn').addEventListener('click', loadAll);
+loadAll();
+</script>
+</body>
+</html>
